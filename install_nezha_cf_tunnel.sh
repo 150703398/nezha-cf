@@ -11,7 +11,7 @@ CLOUDFLARED_NAME="nezha-cloudflared"
 NEZHA_IMAGE="ghcr.io/nezhahq/nezha:v1.14.14"
 CF_IMAGE="cloudflare/cloudflared:latest"
 
-DOMAIN="nezha.ppwq.us.kg"
+DOMAIN="你的域名"
 LOCAL_PORT=8008
 
 # ❗ 必填：Tunnel Token
