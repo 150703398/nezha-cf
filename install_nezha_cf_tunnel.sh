@@ -1,92 +1,70 @@
 #!/usr/bin/env bash
 set -e
 
-############################################
-# 用户可修改区
-############################################
-NEZHA_DOMAIN="nezha.example.com"
-CF_TUNNEL_TOKEN="替换成你的Cloudflare_Tunnel_Token"
-NEZHA_IMAGE="ghcr.io/nezhahq/nezha:v1.14.14"
-WORKDIR="/opt/nezha-tunnel"
+# ======================
+# 基本参数
+# ======================
+BASE_DIR="/opt/nezha-cf-tunnel"
+DASHBOARD_NAME="nezha-dashboard"
+CLOUDFLARED_NAME="nezha-cloudflared"
 
-############################################
-# 基础检查
-############################################
-if [[ $EUID -ne 0 ]]; then
-  echo "请使用 root 运行"
+NEZHA_IMAGE="ghcr.io/nezhahq/nezha:v1.14.14"
+CF_IMAGE="cloudflare/cloudflared:latest"
+
+DOMAIN="nezha.ppwq.us.kg"
+LOCAL_PORT=8008
+
+# ❗ 必填：Tunnel Token
+TUNNEL_TOKEN="在这里粘贴你从 Cloudflare 拿到的 Token"
+
+if [[ "$TUNNEL_TOKEN" == "在这里粘贴你从 Cloudflare 拿到的 Token" ]]; then
+  echo "❌ 请先在脚本中填写 TUNNEL_TOKEN"
   exit 1
 fi
 
-echo "[+] 开始部署 Nezha + Cloudflare Tunnel（方案3）"
+echo "📂 初始化目录..."
+mkdir -p "$BASE_DIR"
 
-############################################
-# 安装 Docker（如未安装）
-############################################
-if ! command -v docker &>/dev/null; then
-  echo "[+] 安装 Docker..."
-  curl -fsSL https://get.docker.com | sh
-fi
+echo "🧹 清理旧容器..."
+docker rm -f "$DASHBOARD_NAME" "$CLOUDFLARED_NAME" >/dev/null 2>&1 || true
 
-if ! command -v docker compose &>/dev/null; then
-  echo "[+] 安装 docker-compose-plugin..."
-  mkdir -p /usr/local/lib/docker/cli-plugins
-  curl -SL https://github.com/docker/compose/releases/download/v2.25.0/docker-compose-linux-x86_64 \
-    -o /usr/local/lib/docker/cli-plugins/docker-compose
-  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-fi
+# ======================
+# 启动 Nezha Dashboard
+# ======================
+echo "🚀 启动 Nezha Dashboard（v1.14.14）..."
+docker run -d \
+  --name "$DASHBOARD_NAME" \
+  --restart unless-stopped \
+  -p 127.0.0.1:$LOCAL_PORT:8008 \
+  "$NEZHA_IMAGE"
 
-############################################
-# 创建目录
-############################################
-mkdir -p ${WORKDIR}
-cd ${WORKDIR}
+sleep 6
 
-############################################
-# 生成 docker-compose.yml
-############################################
-cat > docker-compose.yml <<EOF
-services:
-  nezha-dashboard:
-    image: ${NEZHA_IMAGE}
-    container_name: nezha-dashboard
-    restart: unless-stopped
-    networks:
-      - nezha_net
+# ======================
+# 启动 Cloudflare Tunnel（Token 模式）
+# ======================
+echo "🚀 启动 Cloudflare Tunnel（Token 模式）..."
+docker run -d \
+  --name "$CLOUDFLARED_NAME" \
+  --restart unless-stopped \
+  --network host \
+  -e TUNNEL_TOKEN="$TUNNEL_TOKEN" \
+  "$CF_IMAGE" tunnel run
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: nezha-cloudflared
-    restart: unless-stopped
-    command: tunnel run
-    environment:
-      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
-    networks:
-      - nezha_net
+sleep 5
 
-networks:
-  nezha_net:
-    driver: bridge
-EOF
+# ======================
+# 自检
+# ======================
+echo "🔍 容器状态："
+docker ps | grep -E "nezha|cloudflared"
 
-############################################
-# 启动服务
-############################################
-docker compose up -d
+echo
+echo "🔍 Cloudflared 日志（最近 20 行）："
+docker logs --tail 20 "$CLOUDFLARED_NAME"
 
-############################################
-# 输出信息
-############################################
-echo "========================================"
-echo "🎉 部署完成"
-echo ""
-echo "🌐 面板访问地址："
-echo "   https://${NEZHA_DOMAIN}"
-echo ""
-echo "🔒 安全特性："
-echo " - 无公网端口暴露"
-echo " - 仅 Cloudflare Tunnel 可访问"
-echo " - VPS 扫描不到任何服务"
-echo ""
-echo "📦 容器状态："
-docker ps
-echo "========================================"
+echo
+echo "🎉 部署完成！"
+echo "🌐 访问地址：https://$DOMAIN"
+echo "🔒 Dashboard 内部端口：$LOCAL_PORT"
+echo "🛡️ Cloudflare Tunnel 正常（Token 模式，最稳定）"
