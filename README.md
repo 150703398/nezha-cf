@@ -39,8 +39,10 @@
 
 编辑 deploy.sh：
 
-DOMAIN="nezha.ppwq.us.kg"       # 你的域名
+DOMAIN="你的域名"       # 你的域名
+
 LOCAL_PORT=8008                 # Dashboard 内网端口
+
 TUNNEL_TOKEN="在这里粘贴你从 Cloudflare 拿到的 Token"
 
 
@@ -48,6 +50,7 @@ TUNNEL_TOKEN="在这里粘贴你从 Cloudflare 拿到的 Token"
 
 3️⃣ 运行脚本
 chmod +x deploy.sh
+
 ./deploy.sh
 
 
