@@ -1,19 +1,26 @@
-# 哪吒-CF隧道一键安装脚本
+# Nezha + Cloudflare Tunnel 一键部署脚本
 
+📦 本仓库提供一个 **Bash 脚本**，用于在 Linux 系统上通过 Docker 一键部署：
 
+- **Nezha Dashboard**（内网监控与管理）
+- **Cloudflare Tunnel（Token 模式）**，将 Nezha Dashboard 安全暴露到公网
 
-# 1️⃣ 修改脚本中的两项
-      NEZHA_DOMAIN="nezha.example.com"
-      CF_TUNNEL_TOKEN="你的TunnelToken"
-# 2️⃣ 执行一键脚本
-      chmod +x install_nezha_cf_tunnel.sh
-      ./install_nezha_cf_tunnel.sh
+该方案结合了 **Nezha 监控** 和 **Cloudflare Tunnel 隧道**，实现快速、稳定、无需公网 IP 的远程访问。
 
-# 3️⃣ 浏览器访问
-      https://nezha.example.com
+---
 
+## 功能介绍
 
-#  🎯 不需要开放任何端口
-#  🎯 不用管防火墙
-#  🎯 不用管证书
-#  🎯 哪吒后台直接可用
+### 1️⃣ 基本功能
+
+- 自动创建工作目录 `/opt/nezha-cf-tunnel`
+- 清理旧容器，保证每次部署干净
+- 启动 Nezha Dashboard 容器：
+  - Docker 镜像：`ghcr.io/nezhahq/nezha:v1.14.14`
+  - 内部端口：`8008`
+  - 本地绑定：`127.0.0.1:$LOCAL_PORT`（默认 8008）
+- 启动 Cloudflare Tunnel 容器：
+  - Docker 镜像：`cloudflare/cloudflared:latest`
+  - 使用 **Tunnel Token** 模式（无需手动登录 Cloudflare）
+  - 自动将本地 Nezha Dashboard 暴露到公网
+- 自检容器状态及日志输出，方便排查问题
