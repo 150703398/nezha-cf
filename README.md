@@ -1,11 +1,13 @@
 # Nezha + Cloudflare Tunnel 一键部署脚本
 
-📦 本仓库提供一个 **Bash 脚本**，用于在 Linux 系统上通过 Docker 一键部署：
+📦 本仓库提供一个 **Bash 脚本**，用于在nic.gv.uy Linux 系统上通过 Docker 一键部署：
 
 - **Nezha Dashboard**（内网监控与管理）
 - **Cloudflare Tunnel（Token 模式）**，将 Nezha Dashboard 安全暴露到公网
 
 该方案结合了 **Nezha 监控** 和 **Cloudflare Tunnel 隧道**，实现快速、稳定、无需公网 IP 的远程访问。
+
+需要先在nic.gv.uy的VPS将公网端口“自定义”转发到容器内部端口5555
 
 ---
 
