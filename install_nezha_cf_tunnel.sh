@@ -1,70 +1,87 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
 
-# ======================
-# 基本参数
-# ======================
-BASE_DIR="/opt/nezha-cf-tunnel"
-DASHBOARD_NAME="nezha-dashboard"
-CLOUDFLARED_NAME="nezha-cloudflared"
+# =========================
+# 🟢 配置参数
+# =========================
+INSTALL_DIR="/opt/nezha-cf-tunnel"
+DASHBOARD_IMAGE="ghcr.io/nezhahq/nezha:v1.14.14"
+CLOUDFLARE_IMAGE="cloudflare/cloudflared:latest"
+ARGO_TOKEN=""  # <-- 填入你的隧道令牌TOKEN
+HOSTNAME=""     # 固定隧道域名
+HOST_PORT=5555   # VPS 公网端口映射到 Dashboard 内部端口
+SECRET_LENGTH=32
 
-NEZHA_IMAGE="ghcr.io/nezhahq/nezha:v1.14.14"
-CF_IMAGE="cloudflare/cloudflared:latest"
+# =========================
+# 📂 创建安装目录
+# =========================
+mkdir -p "$INSTALL_DIR"/{data,cert}
+cd "$INSTALL_DIR"
 
-DOMAIN="你的域名"
-LOCAL_PORT=8008
+# =========================
+# 🔑 生成 Dashboard secret
+# =========================
+NZ_CLIENT_SECRET=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c $SECRET_LENGTH)
+echo "生成 NZ_CLIENT_SECRET: $NZ_CLIENT_SECRET"
 
-# ❗ 必填：Tunnel Token
-TUNNEL_TOKEN="在这里粘贴你从 Cloudflare 拿到的 Token"
+# =========================
+# 🐳 清理旧容器
+# =========================
+docker rm -f nezha-dashboard nezha-cloudflared >/dev/null 2>&1 || true
 
-if [[ "$TUNNEL_TOKEN" == "在这里粘贴你从 Cloudflare 拿到的 Token" ]]; then
-  echo "❌ 请先在脚本中填写 TUNNEL_TOKEN"
-  exit 1
+# =========================
+# 📄 创建 docker-compose.yml
+# =========================
+cat > docker-compose.yml <<EOF
+version: '3'
+services:
+  nezha-dashboard:
+    image: $DASHBOARD_IMAGE
+    container_name: nezha-dashboard
+    restart: unless-stopped
+    environment:
+      - NZ_DB_PATH=/data/nezha.db
+      - NZ_CLIENT_SECRET=$NZ_CLIENT_SECRET
+      - NZ_LISTEN_PORT=8008
+    ports:
+      - "$HOST_PORT:8008"
+    volumes:
+      - ./data:/data
+  nezha-cloudflared:
+    image: $CLOUDFLARE_IMAGE
+    container_name: nezha-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token "$ARGO_TOKEN"
+    depends_on:
+      - nezha-dashboard
+EOF
+
+# =========================
+# 🚀 启动服务
+# =========================
+docker-compose up -d
+
+# =========================
+# 🔍 自检 Dashboard (使用内部 curl)
+# =========================
+sleep 5
+if docker exec nezha-dashboard sh -c "wget -qO- http://127.0.0.1:8008/ | grep -q 'Nezha'" ; then
+    DASHBOARD_OK="yes"
+else
+    DASHBOARD_OK="no"
 fi
 
-echo "📂 初始化目录..."
-mkdir -p "$BASE_DIR"
-
-echo "🧹 清理旧容器..."
-docker rm -f "$DASHBOARD_NAME" "$CLOUDFLARED_NAME" >/dev/null 2>&1 || true
-
-# ======================
-# 启动 Nezha Dashboard
-# ======================
-echo "🚀 启动 Nezha Dashboard（v1.14.14）..."
-docker run -d \
-  --name "$DASHBOARD_NAME" \
-  --restart unless-stopped \
-  -p 127.0.0.1:$LOCAL_PORT:8008 \
-  "$NEZHA_IMAGE"
-
-sleep 6
-
-# ======================
-# 启动 Cloudflare Tunnel（Token 模式）
-# ======================
-echo "🚀 启动 Cloudflare Tunnel（Token 模式）..."
-docker run -d \
-  --name "$CLOUDFLARED_NAME" \
-  --restart unless-stopped \
-  --network host \
-  -e TUNNEL_TOKEN="$TUNNEL_TOKEN" \
-  "$CF_IMAGE" tunnel run
-
-sleep 5
-
-# ======================
-# 自检
-# ======================
-echo "🔍 容器状态："
-docker ps | grep -E "nezha|cloudflared"
-
-echo
-echo "🔍 Cloudflared 日志（最近 20 行）："
-docker logs --tail 20 "$CLOUDFLARED_NAME"
-
-echo
+# =========================
+# 📄 输出信息
+# =========================
+echo "=============================="
 echo "🎉 部署完成！"
-echo "🌐 访问地址：https://$DOMAIN"
-echo "🔒 Dashboard 内部端口：$LOCAL_PORT"
-echo "🛡️ Cloudflare Tunnel 正常（Token 模式，最稳定）"
+echo "🌐 Dashboard 访问地址 (Cloudflare Tunnel): https://$HOSTNAME"
+echo "🔒 Dashboard 内部端口 (VPS Agent 可访问): $HOST_PORT"
+echo "🛡️ NZ_CLIENT_SECRET: $NZ_CLIENT_SECRET"
+echo "📌 Dashboard 内部状态自检: $DASHBOARD_OK"
+echo "=============================="
+echo "📌 VPS Agent 使用示例:"
+echo "export NZ_SERVER=http://<VPS_IP>:$HOST_PORT"
+echo "export NZ_CLIENT_SECRET=$NZ_CLIENT_SECRET"
+echo "nohup ./nezha-agent_linux_amd64 &"
