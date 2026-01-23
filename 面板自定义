@@ -1,0 +1,43 @@
+<script>
+setInterval(async () => {
+    try {
+        const res = await fetch('/traffic/traffic.json');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const percent = data.percent;
+        const used = data.used;
+        const limit = data.limit;
+
+        const format = b => {
+            const u=['B','KB','MB','GB','TB']; let i=0;
+            while(b>=1024&&i<u.length-1){b/=1024;i++}
+            return b.toFixed(1)+' '+u[i];
+        };
+
+        document.querySelectorAll('.server-card').forEach(card => {
+            let box = card.querySelector('.traffic-limit-box');
+            if (!box) {
+                box = document.createElement('div');
+                box.className = 'traffic-limit-box';
+                box.style.marginTop = '6px';
+                card.appendChild(box);
+            }
+
+            box.innerHTML = `
+                <div style="font-size:12px;opacity:.8">
+                    流量：${format(used)} / ${format(limit)} (${percent}%)
+                </div>
+                <div style="height:6px;background:#eee;border-radius:4px;overflow:hidden">
+                    <div style="
+                        height:100%;
+                        width:${percent}%;
+                        background:${percent>90?'#ef4444':'#10b981'};
+                        transition:.3s">
+                    </div>
+                </div>
+            `;
+        });
+    } catch(e){}
+}, 5000);
+</script>
