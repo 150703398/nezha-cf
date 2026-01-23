@@ -1,32 +1,50 @@
-name: Build and Publish Docker Image
+name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches:
+      - main   # 触发 push 到 main 分支时自动构建
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
+    
     steps:
-      # 1️⃣ 检出代码
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      # 2️⃣ 登录 GHCR
+      # 1. Checkout 代码
+      - name: Checkout code
+        uses: actions/checkout@v2
+        
+      # 2. 设置 Docker 镜像标签
+      - name: Set up Docker image version
+        id: vars
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/your-image-name"
+          IMAGE_TAG="latest"
+          VERSION_TAG="${GITHUB_SHA::7}"
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          echo "VERSION_TAG=$VERSION_TAG" >> $GITHUB_ENV
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          
+      # 3. 登录到 GitHub Container Registry
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}  # 使用 GitHub Secrets 中的 PAT
 
-      # 3️⃣ 构建 Docker 镜像
+      # 4. 构建 Docker 镜像
       - name: Build Docker image
         run: |
-          docker build -t ghcr.io/${{ github.repository }}:latest .
-
-      # 4️⃣ 推送到 GHCR
-      - name: Push Docker image
+          docker build -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} .
+          
+      # 5. 推送 Docker 镜像到 GHCR
+      - name: Push Docker image to GitHub Container Registry
         run: |
-          docker push ghcr.io/${{ github.repository }}:latest
+          docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          docker tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} ${{ env.IMAGE_NAME }}:${{ env.VERSION_TAG }}
+          docker push ${{ env.IMAGE_NAME }}:${{ env.VERSION_TAG }}  # 推送带版本标签的镜像
+
+      # 6. 完成后通知
+      - name: Notify of successful image push
+        run: echo "Docker image has been successfully pushed to GHCR"
