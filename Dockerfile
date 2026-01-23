@@ -1,28 +1,23 @@
-# 使用官方 Node.js 镜像，选择合适的版本（根据项目需求选择版本）
-FROM node:18-bullseye-slim
+# 使用官方的 Bash 镜像作为基础镜像
+FROM debian:bullseye-slim
+
+# 安装 Docker、curl 和必要的依赖
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    docker.io \
+    git \
+    bash \
+    && rm -rf /var/lib/apt/lists/*
+
+# 将安装脚本复制到容器内
+COPY install_nezha_cf_tunnel.sh /opt/
 
 # 设置工作目录
-WORKDIR /app
+WORKDIR /opt
 
-# 安装构建依赖
-RUN apt-get update && \
-    apt-get install -y build-essential python3 git curl && \
-    rm -rf /var/lib/apt/lists/*
+# 给脚本添加执行权限
+RUN chmod +x install_nezha_cf_tunnel.sh
 
-# 设置 npm registry 为淘宝源，避免网络问题
-RUN npm config set registry https://registry.npmjs.org/
-
-# 复制 package.json 和 package-lock.json 文件
-COPY package*.json ./
-
-# 安装依赖（使用 npm ci 来确保安装一致性）
-RUN npm ci --only=production
-
-# 复制整个项目代码
-COPY . .
-
-# 暴露容器端口
-EXPOSE 3000
-
-# 启动命令（替换为你的项目启动命令）
-CMD ["npm", "start"]
+# 默认执行安装脚本
+ENTRYPOINT ["./install_nezha_cf_tunnel.sh"]
