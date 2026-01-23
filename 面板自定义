@@ -1,43 +1,96 @@
-<script>
-setInterval(async () => {
-    try {
-        const res = await fetch('/traffic/traffic.json');
-        if (!res.ok) return;
-        const data = await res.json();
+#!/usr/bin/env bash
+set -e
 
-        const percent = data.percent;
-        const used = data.used;
-        const limit = data.limit;
+# =========================
+# 🟢 配置参数
+# =========================
+INSTALL_DIR="/opt/nezha-cf-tunnel"
+DASHBOARD_IMAGE="ghcr.io/nezhahq/nezha:v1.14.14"
+CLOUDFLARE_IMAGE="cloudflare/cloudflared:latest"
+ARGO_TOKEN=""   # <-- 填入你的 ARGO TUNNEL TOKEN
+HOSTNAME="你的TUNNEL域名"
+HOST_PORT=5555      # VPS 公网端口映射到 Dashboard 内部端口
+SECRET_LENGTH=32
 
-        const format = b => {
-            const u=['B','KB','MB','GB','TB']; let i=0;
-            while(b>=1024&&i<u.length-1){b/=1024;i++}
-            return b.toFixed(1)+' '+u[i];
-        };
+# =========================
+# 📂 初始化目录
+# =========================
+mkdir -p "$INSTALL_DIR"/{data,cert,backup}
+cd "$INSTALL_DIR"
 
-        document.querySelectorAll('.server-card').forEach(card => {
-            let box = card.querySelector('.traffic-limit-box');
-            if (!box) {
-                box = document.createElement('div');
-                box.className = 'traffic-limit-box';
-                box.style.marginTop = '6px';
-                card.appendChild(box);
-            }
+# =========================
+# 🔑 生成或读取 Dashboard secret
+if [[ -f "$INSTALL_DIR/secret.txt" ]]; then
+    NZ_CLIENT_SECRET=$(cat "$INSTALL_DIR/secret.txt")
+    echo "✅ 读取现有 NZ_CLIENT_SECRET: $NZ_CLIENT_SECRET"
+else
+    NZ_CLIENT_SECRET=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c $SECRET_LENGTH)
+    echo "$NZ_CLIENT_SECRET" > "$INSTALL_DIR/secret.txt"
+    echo "✅ 生成新的 NZ_CLIENT_SECRET: $NZ_CLIENT_SECRET"
+fi
 
-            box.innerHTML = `
-                <div style="font-size:12px;opacity:.8">
-                    流量：${format(used)} / ${format(limit)} (${percent}%)
-                </div>
-                <div style="height:6px;background:#eee;border-radius:4px;overflow:hidden">
-                    <div style="
-                        height:100%;
-                        width:${percent}%;
-                        background:${percent>90?'#ef4444':'#10b981'};
-                        transition:.3s">
-                    </div>
-                </div>
-            `;
-        });
-    } catch(e){}
-}, 5000);
-</script>
+# =========================
+# 🐳 清理旧容器（保留数据）
+docker rm -f nezha-dashboard nezha-cloudflared >/dev/null 2>&1 || true
+
+# =========================
+# 📦 检查匿名 volume 并迁移
+ANON_VOLUME=$(docker volume ls -q | xargs -I{} docker inspect {} --format '{{.Mountpoint}}' | grep nezha || true)
+if [[ -n "$ANON_VOLUME" ]]; then
+    echo "➡️ 发现匿名 volume，迁移数据到 $INSTALL_DIR/data"
+    cp -a "$ANON_VOLUME"/. "$INSTALL_DIR/data"/ || true
+fi
+
+# =========================
+# 📄 创建 docker-compose.yml
+cat > docker-compose.yml <<EOF
+version: '3.9'
+services:
+  nezha-dashboard:
+    image: $DASHBOARD_IMAGE
+    container_name: nezha-dashboard
+    restart: unless-stopped
+    environment:
+      - NZ_DB_PATH=/dashboard/data/nezha.db
+      - NZ_CLIENT_SECRET=$NZ_CLIENT_SECRET
+      - NZ_LISTEN_PORT=8008
+    ports:
+      - "$HOST_PORT:8008"
+    volumes:
+      - ./data:/dashboard/data
+
+  nezha-cloudflared:
+    image: $CLOUDFLARE_IMAGE
+    container_name: nezha-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token "$ARGO_TOKEN"
+    depends_on:
+      - nezha-dashboard
+EOF
+
+# =========================
+# 🚀 启动服务
+docker-compose up -d
+
+# =========================
+# 🔍 自检 Dashboard 内部访问
+sleep 5
+DASHBOARD_OK="no"
+if docker exec nezha-dashboard sh -c "apk add --no-cache wget >/dev/null 2>&1 || true; wget -qO- http://127.0.0.1:8008/ | grep -q 'Nezha'" ; then
+    DASHBOARD_OK="yes"
+fi
+
+# =========================
+# 📄 输出信息
+echo "=============================="
+echo "🎉 部署完成！"
+echo "🌐 Dashboard 访问地址 (Cloudflare Tunnel): https://$HOSTNAME"
+echo "🔒 Dashboard 内部端口 (VPS Agent 可访问): $HOST_PORT"
+echo "🛡️ NZ_CLIENT_SECRET: $NZ_CLIENT_SECRET"
+echo "📌 Dashboard 内部状态自检: $DASHBOARD_OK"
+echo "=============================="
+echo "📌 VPS Agent 使用示例:"
+echo "export NZ_SERVER=http://<VPS_IP>:$HOST_PORT"
+echo "export NZ_CLIENT_SECRET=$NZ_CLIENT_SECRET"
+echo "nohup ./nezha-agent_linux_amd64 &"
+echo "=============================="
