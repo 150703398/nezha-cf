@@ -1,26 +1,22 @@
-# 使用官方的 Node.js 镜像作为基础镜像
-FROM node:16
+# 使用 Debian 系官方 Node 镜像
+FROM node:18-bullseye-slim
 
-# 设置工作目录
 WORKDIR /app
 
-# 安装构建工具，防止某些 npm 包需要编译时出错
-RUN apt-get update && apt-get install -y \
-  build-essential \
-  python3 \
-  && rm -rf /var/lib/apt/lists/*
+# 安装构建依赖
+RUN apt-get update && \
+    apt-get install -y build-essential python3 curl git && \
+    rm -rf /var/lib/apt/lists/*
 
-# 将本地的 package.json 和 package-lock.json 复制到容器中
+# 复制 package.json & package-lock.json
 COPY package*.json ./
 
-# 使用 npm ci 安装依赖
+# 安装依赖
 RUN npm ci --only=production
 
-# 将项目的所有文件复制到容器中
+# 复制项目文件
 COPY . .
 
-# 暴露容器端口
 EXPOSE 3000
 
-# 启动应用
 CMD ["npm", "start"]
